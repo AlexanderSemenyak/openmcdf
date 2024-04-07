@@ -16,6 +16,10 @@ namespace OpenMcdf.Extensions.OLEProperties
         {
             get
             {
+
+#if NETSTANDARD2_0_OR_GREATER
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+#endif
                 return instance.Value;
             }
         }
@@ -407,14 +411,27 @@ namespace OpenMcdf.Extensions.OLEProperties
             {
                 uint size = br.ReadUInt32();
                 data = br.ReadBytes((int)size);
+
                 return Encoding.GetEncoding(codePage).GetString(data);
             }
 
             public override void WriteScalarValue(BinaryWriter bw, string pValue)
             {
-                data = Encoding.GetEncoding(codePage).GetBytes((String)pValue);
-                bw.Write((uint)data.Length);
+                data = Encoding.GetEncoding(codePage).GetBytes(pValue);
+                uint dataLength = (uint)data.Length;
+
+                // The string data must be null terminated, so add a null byte if there isn't one already
+                bool addNullTerminator =
+                    dataLength == 0 || data[dataLength - 1] != '\0';
+
+                if (addNullTerminator) 
+                    dataLength += 1;
+
+                bw.Write(dataLength);
                 bw.Write(data);
+
+                if (addNullTerminator)
+                    bw.Write((byte)0);
             }
         }
 
@@ -439,8 +456,24 @@ namespace OpenMcdf.Extensions.OLEProperties
             public override void WriteScalarValue(BinaryWriter bw, string pValue)
             {
                 data = Encoding.Unicode.GetBytes(pValue);
-                bw.Write((uint)data.Length >> 2);
+
+                // The written data length field is the number of characters (not bytes) and must include a null terminator
+                // add a null terminator if there isn't one already
+                var byteLength = data.Length;
+                bool addNullTerminator =
+                    byteLength == 0 || data[byteLength - 1] != '\0' || data[byteLength - 2] != '\0';
+
+                if (addNullTerminator)
+                    byteLength += 2;
+
+                bw.Write((uint)byteLength / 2);
                 bw.Write(data);
+
+                if (addNullTerminator)
+                {
+                    bw.Write((byte)0);
+                    bw.Write((byte)0);
+                }
             }
         }
 
@@ -612,7 +645,7 @@ namespace OpenMcdf.Extensions.OLEProperties
             }
         }
 
-        #endregion
+#endregion
 
     }
 }

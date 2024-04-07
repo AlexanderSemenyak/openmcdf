@@ -6,6 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenMcdf;
 using System.IO;
 using System.Diagnostics;
+using System.Linq.Expressions;
 
 namespace OpenMcdf.Test
 {
@@ -1183,5 +1184,173 @@ namespace OpenMcdf.Test
         //    f.Save("Astorage.cfs");
         //}
 
+        [TestMethod]
+        public void Test_FIX_BUG_90_CompoundFile_Delete_Storages()
+        {
+            using (var compoundFile = new CompoundFile())
+            {
+                var root = compoundFile.RootStorage;
+                var storageNames = new HashSet<string>();
+
+                // add 99 storages to root
+                for (int i = 1; i <= 99; i++)
+                {
+                    var name = "Storage " + i;
+                    root.AddStorage(name);
+                    storageNames.Add(name);
+                }
+
+                // remove storages until tree becomes unbalanced and its Root changes
+                var rootChild = root.DirEntry.Child;
+                var newChild = rootChild;
+                var j = 1;
+                while (newChild == rootChild && j <= 99)
+                {
+                    var name = "Storage " + j;
+                    root.Delete(name);
+                    storageNames.Remove(name);
+                    newChild = ((DirectoryEntry)(root.Children.Root)).SID; // stop as soon as root.Children has a new Root
+                    j++;
+                }
+
+                // check if all remaining storages are still there
+                foreach (var storageName in storageNames)
+                {
+                    Assert.IsTrue(root.TryGetStorage(storageName, out var storage)); // <- no problem here
+                }
+
+                // write CompundFile into MemoryStream... 
+                using (var memStream = new MemoryStream())
+                {
+                    compoundFile.Save(memStream);
+
+                    // ....and read new CompundFile from that stream
+                    using (var newCf = new CompoundFile(memStream))
+                    {
+                        // check if all storages can be found in to copied CompundFile
+                        foreach (var storageName in storageNames)
+                        {
+                            Assert.IsTrue(newCf.RootStorage.TryGetStorage(storageName, out var storage)); //<- we will see some missing storages here
+                        }
+                    }
+                }
+            }
+        }
+
+        [TestMethod]
+        public void Test_FIX_BUG_75_ForeverLoop()
+        {
+            try
+            {
+                var cf = new CompoundFile("mediationform.doc", CFSUpdateMode.ReadOnly, CFSConfiguration.Default & ~CFSConfiguration.NoValidationException);
+                var s = cf.RootStorage.GetStream("\u0001CompObj");
+                byte[] data = s.GetData();
+            }
+            catch (Exception ex)
+            {
+                Assert.IsInstanceOfType(ex, typeof(CFCorruptedFileException));
+            }
+        }
+
+        [TestMethod]
+        public void Test_FIX_BUG_94_GrowingSizeSave()
+        {
+            String filename = "_Test.ppt";
+            String filename2 = "MyFile4.dat";
+
+            if (File.Exists(filename2))
+                File.Delete(filename2);
+
+
+            if (File.Exists(filename))
+            {
+                File.Copy(filename, filename2);
+            }
+
+            var cf = new CompoundFile(filename2, CFSUpdateMode.Update, CFSConfiguration.EraseFreeSectors);
+            cf.RootStorage.Delete("PowerPoint Document");
+            cf.Commit();
+            cf.Close();
+
+            CompoundFile.ShrinkCompoundFile(filename2);
+
+            long length = new System.IO.FileInfo(filename).Length;
+            long length2 = new System.IO.FileInfo(filename2).Length;
+
+            Assert.IsTrue(length > length2);
+
+
+            if (File.Exists(filename2))
+                File.Delete(filename2);
+
+        }
+
+        [TestMethod]
+        public void Test_FIX_BUG_96_CompoundFile_SaveOverwrite()
+        {
+            String filename = "MultipleStorage.cfs";
+            String filename2 = "MyFile2.dat";
+            String storageName = "MyStorage";
+            String streamName = "MyStream";
+
+            if (File.Exists(filename2))
+                File.Delete(filename2);
+
+            if (File.Exists(filename))
+            {
+                File.Copy(filename, filename2);
+            }
+
+            try
+            {
+                CompoundFile compoundFile = new CompoundFile(filename2);
+                var s = compoundFile.RootStorage.GetStorage(storageName).GetStream(streamName);
+                s.Write(new byte[] { 0x0A, 0x0A }, 0);
+                compoundFile.Save(filename2);
+                compoundFile.Close();
+            }
+            catch (Exception ex)
+            {
+                Assert.IsTrue(ex is CFException, "Exception is " + ex.GetType());
+            }
+
+            try
+            {
+                string rootedPath = Path.GetFullPath(filename2);
+                CompoundFile compoundFile = new CompoundFile(rootedPath);
+                var s = compoundFile.RootStorage.GetStorage(storageName).GetStream(streamName);
+                s.Write(new byte[] { 0x0A, 0x0A }, 0);
+                compoundFile.Save(rootedPath);
+                compoundFile.Close();
+            }
+            catch (Exception ex)
+            {
+                Assert.IsTrue(ex is CFException, "Exception is " + ex.GetType());
+            }
+
+            FileStream fs = null;
+
+            try
+            {
+
+                CompoundFile compoundFile = new CompoundFile(filename2);
+                fs = new FileStream(filename2, FileMode.Open);
+                var s = compoundFile.RootStorage.GetStorage(storageName).GetStream(streamName);
+                s.Write(new byte[] { 0x0A, 0x0A }, 0);
+                compoundFile.Save(fs);
+                compoundFile.Close();
+            }
+            catch (Exception ex)
+            {
+                Assert.IsTrue(ex is CFException, "Exception is " + ex.GetType());
+            }
+
+            fs?.Close();
+            fs?.Dispose();
+
+            if (File.Exists(filename2))
+                File.Delete(filename2);
+        }
     }
+
 }

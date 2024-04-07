@@ -221,7 +221,7 @@ namespace OpenMcdf
         ///     
         /// </code>
         /// </example>
-        public CompoundFile(): this(CFSVersion.Ver_3,CFSConfiguration.Default)
+        public CompoundFile() : this(CFSVersion.Ver_3, CFSConfiguration.Default)
         {
 
             //this.header = new Header();
@@ -681,6 +681,11 @@ namespace OpenMcdf
 
                 header.Read(stream);
 
+                if (!configuration.HasFlag(CFSConfiguration.NoValidationException))
+                {
+                    ValidateHeader(header);
+                }
+
                 int n_sector = Ceiling(((double)(stream.Length - GetSectorSize()) / (double)GetSectorSize()));
 
                 if (stream.Length > 0x7FFFFF0)
@@ -706,6 +711,35 @@ namespace OpenMcdf
 
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Validate header values specified in [MS-CFB] document
+        /// </summary>
+        /// <param name="header">The Header sector of file to validate</param>
+        /// <exception cref="CFCorruptedFileException">If one of the validation checks fails a <see cref="T:OpenMcdf.CFCorruptedFileException">CFCorruptedFileException</see> exception will be thrown</exception>
+        private void ValidateHeader(Header header)
+        {
+            if (header.MiniSectorShift != 6)
+            {
+                throw new CFCorruptedFileException("Mini sector Shift MUST be 0x06");
+            }
+
+            if ((header.MajorVersion == 0x0003 && header.SectorShift != 9) || (header.MajorVersion == 0x0004 && header.SectorShift != 0x000c))
+            {
+                throw new CFCorruptedFileException("Sector Shift MUST be 0x0009 for Major Version 3 and 0x000c for Major Version 4");
+            }
+
+            if (header.MinSizeStandardStream != 4096)
+            {
+                throw new CFCorruptedFileException("Mini Stream Cut off size MUST be 4096 byte");
+            }
+
+            if (header.ByteOrder != 0xFFFE)
+            {
+                throw new CFCorruptedFileException("Byte order MUST be little endian (0xFFFE)");
+            }
+
         }
 
         private void LoadFile(String fileName)
@@ -1901,13 +1935,24 @@ namespace OpenMcdf
             }
         }
 
+        /// <summary>
+        /// Saves the in-memory image of Compound File opened in ReadOnly mode to a file.
+        /// </summary>
+        /// <param name="fileName">File name to write the compound file to</param>
+        /// <exception cref="T:OpenMcdf.CFException">Raised if destination file is not seekable</exception>
+        /// <exception cref="T:OpenMcdf.CFInvalidOperation">Raised if destination file is the current file</exception>
+        public void SaveAs(String fileName)
+        {
+            Save(fileName);
+        }
 
         /// <summary>
         /// Saves the in-memory image of Compound File to a file.
         /// </summary>
         /// <param name="fileName">File name to write the compound file to</param>
         /// <exception cref="T:OpenMcdf.CFException">Raised if destination file is not seekable</exception>
-
+        /// <exception cref="T:OpenMcdf.CFInvalidOperation">Raised if destination file is the current file</exception>
+        [Obsolete("Use SaveAs method")]
         public void Save(String fileName)
         {
             if (_disposed)
@@ -1917,7 +1962,33 @@ namespace OpenMcdf
 
             try
             {
-                fs = new FileStream(fileName, FileMode.Create);
+                bool raiseSaveFileEx = false;
+
+                if (this.HasSourceStream && this.sourceStream != null && this.sourceStream is FileStream)
+                {
+                    if (Path.IsPathRooted(fileName))
+                    {
+                        if (((FileStream)(this.sourceStream)).Name == fileName)
+                        {
+                            raiseSaveFileEx = true;
+                        }
+                    }
+                    else
+                    {
+                        if (((FileStream)(this.sourceStream)).Name == (Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + "\\" + fileName))
+                        {
+
+                            raiseSaveFileEx = true;
+                        }
+                    }
+                }
+
+                if (raiseSaveFileEx)
+                {
+                    throw new CFInvalidOperation("Cannot overwrite current backing file. Compound File should be opened in UpdateMode and Commit() method should be called to persist changes");
+                }
+
+                fs = new FileStream(fileName, FileMode.Create, FileAccess.ReadWrite, FileShare.ReadWrite);
                 Save(fs);
             }
             catch (Exception ex)
@@ -1926,11 +1997,10 @@ namespace OpenMcdf
             }
             finally
             {
-                if (fs != null)
-                    fs.Flush();
+                sourceStream?.Close();
 
-                if (fs != null)
-                    fs.Close();
+                fs?.Flush();
+                fs?.Close();
 
             }
         }
@@ -1967,11 +2037,21 @@ namespace OpenMcdf
             if (!stream.CanSeek)
                 throw new CFException("Cannot save on a non-seekable stream");
 
+
+
             CheckForLockSector();
             int sSize = GetSectorSize();
 
             try
             {
+                if (this.HasSourceStream && this.sourceStream != null && this.sourceStream is FileStream && stream is FileStream)
+                {
+                    if (((FileStream)(this.sourceStream)).Name == ((FileStream)(stream)).Name)
+                    {
+                        throw new CFInvalidOperation("Cannot overwrite current backing file. Compound File should be opened in UpdateMode and Commit() method should be called to persist changes");
+                    }
+                }
+
                 stream.Write((byte[])Array.CreateInstance(typeof(byte), sSize), 0, sSize);
 
                 CommitDirectory();
@@ -2005,6 +2085,7 @@ namespace OpenMcdf
             }
             catch (Exception ex)
             {
+                sourceStream?.Close();
                 throw new CFException("Internal error while saving compound file to stream ", ex);
             }
         }
@@ -2188,10 +2269,12 @@ namespace OpenMcdf
 
                     int nSec = (int)Math.Floor(((double)(Math.Abs(delta)) / newSectorSize)); //number of sectors to mark as free
 
+                    int startFreeSector = sectorChain.Count - nSec; // start sector to free
+
                     if (newSectorSize == Sector.MINISECTOR_SIZE)
-                        FreeMiniChain(sectorChain, nSec, this.eraseFreeSectors);
+                        FreeMiniChain(sectorChain, startFreeSector, this.eraseFreeSectors);
                     else
-                        FreeChain(sectorChain, nSec, this.eraseFreeSectors);
+                        FreeChain(sectorChain, startFreeSector, this.eraseFreeSectors);
                 }
 
                 if (sectorChain.Count > 0)

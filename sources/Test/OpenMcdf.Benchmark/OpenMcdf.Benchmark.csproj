@@ -2,15 +2,26 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp2.2</TargetFramework>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.11.5" />
+    <PackageReference Include="BenchmarkDotNet" Version="0.13.12" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\OpenMcdf.Extensions\OpenMcdf.Extensions.csproj" />
     <ProjectReference Include="..\..\OpenMcdf\OpenMcdf.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="TestFiles\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\TestFiles\winUnicodeDictionary.doc" Link="TestFiles\winUnicodeDictionary.doc">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
