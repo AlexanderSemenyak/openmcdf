@@ -1,4 +1,4 @@
-https://github.com/ironfede/openmcdf
+origin: https://github.com/ironfede/openmcdf
 
 [![Build Status](https://fb8.visualstudio.com/Openmcdf/_apis/build/status/Openmcdf-CI?branchName=master)](https://fb8.visualstudio.com/Openmcdf/_build/latest?definitionId=1&branchName=master)
 
