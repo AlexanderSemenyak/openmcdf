@@ -1,4 +1,12 @@
 origin: https://github.com/ironfede/openmcdf
+Также можно посмотреть: 
+1) Алгоритм компрессии в VBA: https://github.com/AlexanderSemenyak/Kavod.Vba.Compression
+   origin: https://github.com/rossknudsen/Kavod.Vba.Compression
+2) Шифрование макросов в doc-файлах
+    https://github.com/AlexanderSemenyak/EvilClippy_VBA
+3) "Улучшенная" версия (по словам автора) для данного компонента: https://github.com/AlexanderSemenyak/mcdf-reader
+    origin: https://github.com/provegard/mcdf-reader.git
+
 
 [![Build Status](https://fb8.visualstudio.com/Openmcdf/_apis/build/status/Openmcdf-CI?branchName=master)](https://fb8.visualstudio.com/Openmcdf/_build/latest?definitionId=1&branchName=master)
 
